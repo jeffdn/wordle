@@ -8,13 +8,9 @@ fn main() {
     let dictionary: Vec<&str> = {
         let mut pairs: Vec<(&str, usize)> = DICTIONARY
             .split('\n')
-            .filter_map(|pair| {
-                let mut split = pair.splitn(2, ' ');
-
-                match (split.next(), split.next()) {
-                    (Some(word), Some(count_str)) => count_str.parse().map(|c| (word, c)).ok(),
-                    _ => None,
-                }
+            .filter_map(|pair| match pair.split_once(' ') {
+                Some((word, count_str)) => count_str.parse().map(|c| (word, c)).ok(),
+                _ => None,
             })
             .collect();
         pairs.sort_by_key(|&(_, count)| std::cmp::Reverse(count));

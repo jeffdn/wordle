@@ -1,5 +1,14 @@
 use std::borrow::Cow;
 
+macro_rules! mask {
+    (C) => {Correctness::Correct};
+    (M) => {Correctness::Misplaced};
+    (W) => {Correctness::Wrong};
+    ($($c:tt)+) => {[
+         $(mask!($c)),+
+    ]};
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Correctness {
     Correct,
@@ -40,8 +49,6 @@ impl Correctness {
     }
 }
 
-const CORRECT: [Correctness; 5] = [Correctness::Correct; 5];
-
 #[derive(Clone, Copy)]
 struct Guess<'a> {
     word: &'a str,
@@ -58,7 +65,7 @@ impl<'a> Guess<'a> {
 
     #[inline]
     fn is_correct(&self) -> bool {
-        self.mask == CORRECT
+        self.mask == mask![C C C C C]
     }
 }
 
@@ -114,6 +121,12 @@ fn _word_filter(guess: &Guess, word: &str) -> bool {
             })
         {
         } else if !plausible {
+            return false;
+        }
+    }
+
+    for (&m, u) in guess.mask.iter().zip(&used) {
+        if m == Correctness::Misplaced && !u {
             return false;
         }
     }
@@ -174,16 +187,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    #[allow(unused_macros)]
-    macro_rules! mask {
-        (C) => {Correctness::Correct};
-        (M) => {Correctness::Misplaced};
-        (W) => {Correctness::Wrong};
-        ($($c:tt)+) => {[
-             $(mask!($c)),+
-        ]};
-    }
-
     #[test]
     fn all_correct() {
         assert_eq!(Correctness::compute("stare", "stare"), mask![C C C C C]);
@@ -223,5 +226,19 @@ mod tests {
 
         assert!(_word_filter(&guess, "ccccc"));
         assert!(_word_filter(&guess, "ccccz"));
+    }
+
+    #[test]
+    fn plausibility_requires_misplaced() {
+        let answer = "islet";
+        let guess_word = "tares";
+        let guess = Guess::check(answer, guess_word);
+
+        // As we have the 's', but misplaced, all subsequent guesses should have
+        // an 's', and in a different position.
+        assert!(!_word_filter(&guess, "given"));
+        assert!(!_word_filter(&guess, "model"));
+        assert!(!_word_filter(&guess, "chief"));
+        assert!(_word_filter(&guess, "islet"));
     }
 }
