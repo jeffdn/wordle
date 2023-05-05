@@ -45,20 +45,20 @@ const CORRECT: [Correctness; 5] = [Correctness::Correct; 5];
 #[derive(Clone, Copy)]
 struct Guess<'a> {
     word: &'a str,
-    correctness: [Correctness; 5],
+    mask: [Correctness; 5],
 }
 
 impl<'a> Guess<'a> {
-    fn guess(answer: &'a str, word: &'a str) -> Self {
+    fn check(answer: &'a str, word: &'a str) -> Self {
         Self {
             word,
-            correctness: Correctness::compute(answer, word),
+            mask: Correctness::compute(answer, word),
         }
     }
 
     #[inline]
     fn is_correct(&self) -> bool {
-        self.correctness == CORRECT
+        self.mask == CORRECT
     }
 }
 
@@ -69,19 +69,52 @@ pub(crate) struct Guesser<'a> {
     guesses: usize,
 }
 
-fn _word_filter<'a>(guess: &Guess<'a>, word: &str) -> bool {
-    for (i, (a, g)) in guess.word.bytes().zip(word.bytes()).enumerate() {
-        match guess.correctness[i] {
-            Correctness::Correct => {
-                if a != g {
+fn _word_filter(guess: &Guess, word: &str) -> bool {
+    let mut used = [false; 5];
+
+    for (i, ((g, &m), w)) in guess
+        .word
+        .bytes()
+        .zip(&guess.mask)
+        .zip(word.bytes())
+        .enumerate()
+    {
+        if m == Correctness::Correct {
+            if w != g {
+                return false;
+            } else {
+                used[i] = true;
+                continue;
+            }
+        }
+
+        let mut plausible = true;
+
+        if guess
+            .word
+            .bytes()
+            .zip(&guess.mask)
+            .enumerate()
+            .any(|(j, (g_i, &m_i))| {
+                if g_i != w || used[j] {
                     return false;
                 }
-            },
-            Correctness::Misplaced | Correctness::Wrong => {
-                if a == g {
-                    return false;
+
+                match m_i {
+                    Correctness::Correct => false,
+                    Correctness::Misplaced if j != i => {
+                        used[j] = true;
+                        true
+                    },
+                    _ => {
+                        plausible = false;
+                        false
+                    },
                 }
-            },
+            })
+        {
+        } else if !plausible {
+            return false;
         }
     }
 
@@ -102,8 +135,12 @@ impl<'a> Guesser<'a> {
         let mut current_word = "tares";
 
         loop {
-            let guess = Guess::guess(self.answer, current_word);
+            let guess = Guess::check(self.answer, current_word);
             self.guesses += 1;
+
+            if self.guesses > 6 {
+                break None;
+            }
 
             if guess.is_correct() {
                 break Some((guess.word, self.guesses));
@@ -114,12 +151,12 @@ impl<'a> Guesser<'a> {
                     self.dictionary = Cow::Owned(
                         self.dictionary
                             .iter()
-                            .filter(|ref word| _word_filter(&guess, *word))
+                            .filter(|word| _word_filter(&guess, word))
                             .map(|word| *word)
                             .collect(),
                     );
                 },
-                Cow::Owned(dict) => dict.retain(|ref word| _word_filter(&guess, word)),
+                Cow::Owned(dict) => dict.retain(|word| _word_filter(&guess, word)),
             };
 
             self.history[self.guesses - 1] = Some(guess);
@@ -166,5 +203,25 @@ mod tests {
     fn mixed() {
         assert_eq!(Correctness::compute("tares", "tardy"), mask![C C C W W]);
         assert_eq!(Correctness::compute("party", "tardy"), mask![M C C W C]);
+    }
+
+    #[test]
+    fn plausibility_imply() {
+        let answer = "imply";
+        let guess_word = "gypsy";
+        let guess = Guess::check(answer, guess_word);
+
+        assert!(!_word_filter(&guess, "nymph"));
+        assert!(_word_filter(&guess, "amply"));
+    }
+
+    #[test]
+    fn plausibility_close() {
+        let answer = "ccccc";
+        let guess_word = "ccccg";
+        let guess = Guess::check(answer, guess_word);
+
+        assert!(_word_filter(&guess, "ccccc"));
+        assert!(_word_filter(&guess, "ccccz"));
     }
 }

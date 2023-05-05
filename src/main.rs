@@ -21,12 +21,21 @@ fn main() {
         pairs.into_iter().map(|(word, _)| word).collect()
     };
 
-    for answer in answers.iter().take(25) {
+    let mut count = 0;
+    let mut score = 0;
+
+    for answer in answers.iter().take(100) {
         let mut guesser = crate::guesser::Guesser::new(answer, &dictionary);
+        count += 1;
 
         match guesser.solve() {
-            Some((word, guess_count)) => println!("{answer}: {word} in {guess_count}"),
-            None => println!("{answer}: unsolved"),
+            Some((word, guess_count)) => {
+                println!("{answer}: {word} in {guess_count}");
+                score += guess_count;
+            },
+            _ => println!("{answer}: unsolved"),
         };
     }
+
+    println!("average score: {}", score as f32 / count as f32);
 }
