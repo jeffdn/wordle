@@ -63,6 +63,64 @@ impl<'a> Guess<'a> {
         }
     }
 
+    fn matches(&self, word: &str) -> bool {
+        let mut used = [false; 5];
+
+        for (i, ((g, &m), w)) in self
+            .word
+            .bytes()
+            .zip(&self.mask)
+            .zip(word.bytes())
+            .enumerate()
+        {
+            if m == Correctness::Correct {
+                if w != g {
+                    return false;
+                } else {
+                    used[i] = true;
+                    continue;
+                }
+            }
+
+            let mut plausible = true;
+
+            if self
+                .word
+                .bytes()
+                .zip(&self.mask)
+                .enumerate()
+                .any(|(j, (g_i, &m_i))| {
+                    if g_i != w || used[j] {
+                        return false;
+                    }
+
+                    match m_i {
+                        Correctness::Correct => false,
+                        Correctness::Misplaced if j != i => {
+                            used[j] = true;
+                            true
+                        },
+                        _ => {
+                            plausible = false;
+                            false
+                        },
+                    }
+                })
+            {
+            } else if !plausible {
+                return false;
+            }
+        }
+
+        for (&m, u) in self.mask.iter().zip(&used) {
+            if m == Correctness::Misplaced && !u {
+                return false;
+            }
+        }
+
+        true
+    }
+
     #[inline]
     fn is_correct(&self) -> bool {
         self.mask == mask![C C C C C]
@@ -74,64 +132,6 @@ pub(crate) struct Guesser<'a> {
     dictionary: Cow<'a, Vec<&'a str>>,
     history: [Option<Guess<'a>>; 6],
     guesses: usize,
-}
-
-fn _word_filter(guess: &Guess, word: &str) -> bool {
-    let mut used = [false; 5];
-
-    for (i, ((g, &m), w)) in guess
-        .word
-        .bytes()
-        .zip(&guess.mask)
-        .zip(word.bytes())
-        .enumerate()
-    {
-        if m == Correctness::Correct {
-            if w != g {
-                return false;
-            } else {
-                used[i] = true;
-                continue;
-            }
-        }
-
-        let mut plausible = true;
-
-        if guess
-            .word
-            .bytes()
-            .zip(&guess.mask)
-            .enumerate()
-            .any(|(j, (g_i, &m_i))| {
-                if g_i != w || used[j] {
-                    return false;
-                }
-
-                match m_i {
-                    Correctness::Correct => false,
-                    Correctness::Misplaced if j != i => {
-                        used[j] = true;
-                        true
-                    },
-                    _ => {
-                        plausible = false;
-                        false
-                    },
-                }
-            })
-        {
-        } else if !plausible {
-            return false;
-        }
-    }
-
-    for (&m, u) in guess.mask.iter().zip(&used) {
-        if m == Correctness::Misplaced && !u {
-            return false;
-        }
-    }
-
-    true
 }
 
 impl<'a> Guesser<'a> {
@@ -164,12 +164,12 @@ impl<'a> Guesser<'a> {
                     self.dictionary = Cow::Owned(
                         self.dictionary
                             .iter()
-                            .filter(|word| _word_filter(&guess, word))
+                            .filter(|word| guess.matches(word))
                             .map(|word| *word)
                             .collect(),
                     );
                 },
-                Cow::Owned(dict) => dict.retain(|word| _word_filter(&guess, word)),
+                Cow::Owned(dict) => dict.retain(|word| guess.matches(word)),
             };
 
             self.history[self.guesses - 1] = Some(guess);
@@ -214,8 +214,8 @@ mod tests {
         let guess_word = "gypsy";
         let guess = Guess::check(answer, guess_word);
 
-        assert!(!_word_filter(&guess, "nymph"));
-        assert!(_word_filter(&guess, "amply"));
+        assert!(!guess.matches("nymph"));
+        assert!(guess.matches("amply"));
     }
 
     #[test]
@@ -224,8 +224,19 @@ mod tests {
         let guess_word = "ccccg";
         let guess = Guess::check(answer, guess_word);
 
-        assert!(_word_filter(&guess, "ccccc"));
-        assert!(_word_filter(&guess, "ccccz"));
+        assert!(guess.matches("ccccc"));
+        assert!(guess.matches("ccccz"));
+    }
+
+    #[test]
+    fn plausibility_racer() {
+        let answer = "racer";
+        let guess_word = "tares";
+        let guess = Guess::check(answer, guess_word);
+
+        assert!(guess.matches("pacer"));
+        assert!(guess.matches("raced"));
+        assert!(!guess.matches("races"));
     }
 
     #[test]
@@ -236,9 +247,9 @@ mod tests {
 
         // As we have the 's', but misplaced, all subsequent guesses should have
         // an 's', and in a different position.
-        assert!(!_word_filter(&guess, "given"));
-        assert!(!_word_filter(&guess, "model"));
-        assert!(!_word_filter(&guess, "chief"));
-        assert!(_word_filter(&guess, "islet"));
+        assert!(!guess.matches("given"));
+        assert!(!guess.matches("model"));
+        assert!(!guess.matches("chief"));
+        assert!(guess.matches("islet"));
     }
 }

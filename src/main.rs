@@ -19,19 +19,24 @@ fn main() {
 
     let mut count = 0;
     let mut score = 0;
+    let mut wrong = 0;
 
     for answer in answers.iter().take(100) {
         let mut guesser = crate::guesser::Guesser::new(answer, &dictionary);
-        count += 1;
 
         match guesser.solve() {
-            Some((word, guess_count)) => {
-                println!("{answer}: {word} in {guess_count}");
+            Some((_, guess_count)) => {
+                println!("{answer} in {guess_count}");
                 score += guess_count;
+                count += 1;
             },
-            _ => println!("{answer}: unsolved"),
+            _ => {
+                println!("{answer}: unsolved");
+                wrong += 1;
+            },
         };
     }
 
     println!("average score: {}", score as f32 / count as f32);
+    println!("missed words: {}", wrong);
 }
