@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 
 macro_rules! mask {
     (C) => {Correctness::Correct};
@@ -9,7 +9,7 @@ macro_rules! mask {
     ]};
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Correctness {
     Correct,
     Misplaced,
@@ -63,82 +63,115 @@ impl<'a> Guess<'a> {
         }
     }
 
+    fn matches(&self, word: &str) -> bool {
+        let mut used = [false; 5];
+
+        for (i, ((g, &m), w)) in self
+            .word
+            .bytes()
+            .zip(&self.mask)
+            .zip(word.bytes())
+            .enumerate()
+        {
+            if m == Correctness::Correct {
+                if w != g {
+                    return false;
+                } else {
+                    used[i] = true;
+                    continue;
+                }
+            }
+
+            if m == Correctness::Misplaced && w == g {
+                return false;
+            }
+
+            let mut plausible = true;
+
+            if self
+                .word
+                .bytes()
+                .zip(&self.mask)
+                .enumerate()
+                .any(|(j, (g_i, &m_i))| {
+                    if g_i != w || used[j] {
+                        return false;
+                    }
+
+                    match m_i {
+                        Correctness::Correct => false,
+                        Correctness::Misplaced if j != i => {
+                            used[j] = true;
+                            true
+                        },
+                        _ => {
+                            plausible = false;
+                            false
+                        },
+                    }
+                })
+            {
+            } else if !plausible {
+                return false;
+            }
+        }
+
+        for (&m, u) in self.mask.iter().zip(&used) {
+            if m == Correctness::Misplaced && !u {
+                return false;
+            }
+        }
+
+        true
+    }
+
     #[inline]
     fn is_correct(&self) -> bool {
         self.mask == mask![C C C C C]
     }
 }
 
+fn _generate_used_mask(guess: &Guess, word: &str) -> [bool; 5] {
+    let mut guess_used = [false; 5];
+    let mut word_used = [false; 5];
+
+    'outer: for (i, (w, m)) in word.bytes().zip(guess.mask).enumerate() {
+        if m == Correctness::Correct {
+            guess_used[i] = true;
+            word_used[i] = true;
+            continue;
+        }
+
+        for (j, (g_i, &m_i)) in guess.word.bytes().zip(&guess.mask).enumerate() {
+            if g_i == w && m_i == Correctness::Misplaced && j != i && !guess_used[j] {
+                word_used[i] = true;
+                guess_used[j] = true;
+                continue 'outer;
+            }
+        }
+    }
+
+    word_used
+}
+
 pub(crate) struct Guesser<'a> {
     answer: &'a str,
     dictionary: Cow<'a, Vec<&'a str>>,
+    letters: &'a HashMap<u8, f32>,
     history: [Option<Guess<'a>>; 6],
     guesses: usize,
 }
 
-fn _word_filter(guess: &Guess, word: &str) -> bool {
-    let mut used = [false; 5];
-
-    for (i, ((g, &m), w)) in guess
-        .word
-        .bytes()
-        .zip(&guess.mask)
-        .zip(word.bytes())
-        .enumerate()
-    {
-        if m == Correctness::Correct {
-            if w != g {
-                return false;
-            } else {
-                used[i] = true;
-                continue;
-            }
-        }
-
-        let mut plausible = true;
-
-        if guess
-            .word
-            .bytes()
-            .zip(&guess.mask)
-            .enumerate()
-            .any(|(j, (g_i, &m_i))| {
-                if g_i != w || used[j] {
-                    return false;
-                }
-
-                match m_i {
-                    Correctness::Correct => false,
-                    Correctness::Misplaced if j != i => {
-                        used[j] = true;
-                        true
-                    },
-                    _ => {
-                        plausible = false;
-                        false
-                    },
-                }
-            })
-        {
-        } else if !plausible {
-            return false;
-        }
-    }
-
-    for (&m, u) in guess.mask.iter().zip(&used) {
-        if m == Correctness::Misplaced && !u {
-            return false;
-        }
-    }
-
-    true
-}
-
 impl<'a> Guesser<'a> {
-    pub(crate) fn new(answer: &'a str, dictionary: &'a Vec<&'a str>) -> Self {
+    pub(crate) fn new(
+        answer: &'a str,
+        dictionary: &'a Vec<&'a str>,
+        letters: &'a HashMap<u8, f32>,
+    ) -> Self {
         Self {
             answer,
             dictionary: Cow::Borrowed(dictionary),
+            letters,
             history: [None; 6],
             guesses: 0,
         }
@@ -164,12 +197,12 @@ impl<'a> Guesser<'a> {
                     self.dictionary = Cow::Owned(
                         self.dictionary
                             .iter()
-                            .filter(|word| _word_filter(&guess, word))
+                            .filter(|word| guess.matches(word))
                             .map(|word| *word)
                             .collect(),
                     );
                 },
-                Cow::Owned(dict) => dict.retain(|word| _word_filter(&guess, word)),
+                Cow::Owned(dict) => dict.retain(|word| guess.matches(word)),
             };
 
             self.history[self.guesses - 1] = Some(guess);
@@ -178,8 +211,55 @@ impl<'a> Guesser<'a> {
                 break None;
             }
 
+            let mut scored_guesses: Vec<(&str, f32, f32)> = self
+                .dictionary
+                .iter()
+                .map(|word| {
+                    let used = _generate_used_mask(&self.history[self.guesses - 1].unwrap(), word);
+                    let mut points: f32 = 0.0;
+
+                    for (w, u) in word.bytes().zip(used) {
+                        if !u {
+                            points += self.letters[&w];
+                        }
+                    }
+
+                    let dict_index = self
+                        .dictionary
+                        .iter()
+                        .enumerate()
+                        .find_map(|(i, w)| {
+                            if w == word {
+                                return Some(i);
+                            } else {
+                                return None;
+                            }
+                        })
+                        .unwrap() as f32;
+
+                    (
+                        *word,
+                        points,
+                        ((points / (dict_index + 1.0f32))
+                            * (1.0f32 / self.dictionary.len() as f32).log2()),
+                    )
+                })
+                .collect();
+
+            scored_guesses.sort_by(|&(_, _, s_l), &(_, _, s_r)| (-s_l).partial_cmp(&-s_r).unwrap());
+
+            // current_word = scored_guesses[0].0;
             current_word = self.dictionary[0];
         }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn guessed_words(&self) -> (Vec<&str>, usize, &[&str]) {
+        (
+            self.history.iter().map(|og| og.unwrap().word).collect(),
+            self.dictionary.len(),
+            &self.dictionary,
+        )
     }
 }
 
@@ -214,8 +294,8 @@ mod tests {
         let guess_word = "gypsy";
         let guess = Guess::check(answer, guess_word);
 
-        assert!(!_word_filter(&guess, "nymph"));
-        assert!(_word_filter(&guess, "amply"));
+        assert!(!guess.matches("nymph"));
+        assert!(guess.matches("amply"));
     }
 
     #[test]
@@ -224,8 +304,18 @@ mod tests {
         let guess_word = "ccccg";
         let guess = Guess::check(answer, guess_word);
 
-        assert!(_word_filter(&guess, "ccccc"));
-        assert!(_word_filter(&guess, "ccccz"));
+        assert!(guess.matches("ccccc"));
+        assert!(guess.matches("ccccz"));
+    }
+
+    #[test]
+    fn plausibility_racer() {
+        let answer = "racer";
+        let guess_word = "tares";
+        let guess = Guess::check(answer, guess_word);
+
+        assert!(guess.matches("pacer"));
+        assert!(guess.matches("racer"));
     }
 
     #[test]
@@ -236,9 +326,54 @@ mod tests {
 
         // As we have the 's', but misplaced, all subsequent guesses should have
         // an 's', and in a different position.
-        assert!(!_word_filter(&guess, "given"));
-        assert!(!_word_filter(&guess, "model"));
-        assert!(!_word_filter(&guess, "chief"));
-        assert!(_word_filter(&guess, "islet"));
+        assert!(!guess.matches("given"));
+        assert!(!guess.matches("model"));
+        assert!(!guess.matches("chief"));
+        assert!(guess.matches("islet"));
+    }
+
+    #[test]
+    fn word_mask_generation() {
+        let answer = "racer";
+        let guess_word = "tares";
+        let guess = Guess::check(answer, guess_word);
+
+        assert_eq!(
+            _generate_used_mask(&guess, "pacer"),
+            [false, true, false, true, true]
+        );
+        assert_eq!(
+            _generate_used_mask(&guess, "racer"),
+            [true, true, false, true, false]
+        );
+    }
+
+    #[allow(unused)]
+    static DICTIONARY: &str = include_str!("../corpus/word-counts.txt");
+
+    #[test]
+    fn generate_patterns() {
+        let mut dictionary: Vec<&str> = {
+            let mut pairs: Vec<(&str, usize)> = DICTIONARY
+                .split('\n')
+                .filter_map(|pair| match pair.split_once(' ') {
+                    Some((word, count_str)) => count_str.parse().map(|c| (word, c)).ok(),
+                    _ => None,
+                })
+                .collect();
+            pairs.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
+            pairs.into_iter().map(|(word, _)| word).collect()
+        };
+
+        let guess = Guess {
+            word: "weary",
+            mask: mask![C W M W W],
+        };
+
+        dictionary.retain(|word| guess.matches(*word));
+        dictionary.sort();
+
+        println!("{:?}", dictionary);
+        assert_eq!(dictionary.len(), 58);
     }
 }

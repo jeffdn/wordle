@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 mod guesser;
 
 static ANSWERS: &str = include_str!("../answers.txt");
 static DICTIONARY: &str = include_str!("../corpus/word-counts.txt");
+static LETTERS: &str = include_str!("../corpus/letter-frequency.txt");
 
 fn main() {
     let answers: Vec<&str> = ANSWERS.split_ascii_whitespace().collect();
@@ -16,22 +19,37 @@ fn main() {
         pairs.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
         pairs.into_iter().map(|(word, _)| word).collect()
     };
+    let letters: HashMap<u8, f32> = LETTERS
+        .split('\n')
+        .filter_map(|pair| match pair.split_once(' ') {
+            Some((letter, count_str)) => count_str
+                .parse()
+                .map(|c| (letter.bytes().nth(0).unwrap(), c))
+                .ok(),
+            _ => None,
+        })
+        .collect();
 
     let mut count = 0;
     let mut score = 0;
+    let mut unsolved_count = 0;
 
-    for answer in answers.iter().take(100) {
-        let mut guesser = crate::guesser::Guesser::new(answer, &dictionary);
-        count += 1;
+    for answer in answers.iter() {
+        let mut guesser = crate::guesser::Guesser::new(answer, &dictionary, &letters);
 
         match guesser.solve() {
-            Some((word, guess_count)) => {
-                println!("{answer}: {word} in {guess_count}");
+            Some((_, guess_count)) => {
+                // println!("{answer}: {word} in {guess_count}");
                 score += guess_count;
+                count += 1;
             },
-            _ => println!("{answer}: unsolved"),
+            _ => {
+                unsolved_count += 1;
+                println!("{answer}: unsolved -- {:?}", guesser.guessed_words());
+            },
         };
     }
 
     println!("average score: {}", score as f32 / count as f32);
+    println!("unsolved count: {}", unsolved_count);
 }
