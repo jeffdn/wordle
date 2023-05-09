@@ -28,8 +28,7 @@ fn main() {
         let mut guesser = crate::guesser::Guesser::new(answer, &dictionary, &exclusions);
 
         match guesser.solve() {
-            Some((_, guess_count)) => {
-                // println!("{answer} in {guess_count}");
+            Some(guess_count) => {
                 count += 1;
                 score += guess_count;
                 exclusions.insert(answer);

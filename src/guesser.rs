@@ -120,7 +120,6 @@ pub(crate) struct Guesser<'a> {
     dictionary: Cow<'a, Vec<&'a str>>,
     exclusions: &'a HashSet<&'a str>,
     history: [Option<Guess<'a>>; 6],
-    guesses: usize,
 }
 
 impl<'a> Guesser<'a> {
@@ -134,23 +133,17 @@ impl<'a> Guesser<'a> {
             dictionary: Cow::Borrowed(dictionary),
             exclusions,
             history: [None; 6],
-            guesses: 0,
         }
     }
 
-    pub(crate) fn solve(&mut self) -> Option<(&'a str, usize)> {
+    pub(crate) fn solve(&mut self) -> Option<usize> {
         let mut current_word = "salet";
 
-        loop {
+        for i in 0..6 {
             let guess = Guess::check(self.answer, current_word);
-            self.guesses += 1;
-
-            if self.guesses > 6 {
-                break None;
-            }
 
             if guess.is_correct() {
-                break Some((guess.word, self.guesses));
+                return Some(i + 1);
             }
 
             match &mut self.dictionary {
@@ -170,14 +163,16 @@ impl<'a> Guesser<'a> {
                 },
             };
 
-            self.history[self.guesses - 1] = Some(guess);
+            self.history[i] = Some(guess);
 
             if self.dictionary.is_empty() {
-                break None;
+                break;
             }
 
             current_word = self.dictionary[0];
         }
+
+        None
     }
 
     pub(crate) fn guessed_words(&self) -> Vec<&str> {
