@@ -133,7 +133,7 @@ impl<'a> Guesser<'a> {
     }
 
     pub(crate) fn solve(&mut self) -> Option<(&'a str, usize)> {
-        let mut current_word = "tares";
+        let mut current_word = "salet";
 
         loop {
             let guess = Guess::check(self.answer, current_word);
