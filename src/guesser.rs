@@ -66,7 +66,7 @@ impl<'a> Guess<'a> {
     fn matches(&self, word: &str) -> bool {
         let mut used = [false; 5];
 
-        for (i, ((g, &m), w)) in self
+        'outer: for (i, ((g, &m), w)) in self
             .word
             .bytes()
             .zip(&self.mask)
@@ -82,33 +82,21 @@ impl<'a> Guess<'a> {
                 }
             }
 
-            let mut plausible = true;
+            for (j, (g_i, &m_i)) in self.word.bytes().zip(&self.mask).enumerate() {
+                if g_i != w || used[j] {
+                    continue;
+                }
 
-            if self
-                .word
-                .bytes()
-                .zip(&self.mask)
-                .enumerate()
-                .any(|(j, (g_i, &m_i))| {
-                    if g_i != w || used[j] {
+                match m_i {
+                    Correctness::Correct => continue,
+                    Correctness::Misplaced if j != i => {
+                        used[j] = true;
+                        continue 'outer;
+                    },
+                    _ => {
                         return false;
-                    }
-
-                    match m_i {
-                        Correctness::Correct => false,
-                        Correctness::Misplaced if j != i => {
-                            used[j] = true;
-                            true
-                        },
-                        _ => {
-                            plausible = false;
-                            false
-                        },
-                    }
-                })
-            {
-            } else if !plausible {
-                return false;
+                    },
+                }
             }
         }
 
@@ -180,6 +168,10 @@ impl<'a> Guesser<'a> {
 
             current_word = self.dictionary[0];
         }
+    }
+
+    pub(crate) fn guessed_words(&self) -> Vec<&str> {
+        self.history.iter().map(|og| og.unwrap().word).collect()
     }
 }
 

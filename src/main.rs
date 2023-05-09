@@ -21,17 +21,17 @@ fn main() {
     let mut score = 0;
     let mut wrong = 0;
 
-    for answer in answers.iter().take(100) {
+    for answer in answers.iter() {
         let mut guesser = crate::guesser::Guesser::new(answer, &dictionary);
+        count += 1;
 
         match guesser.solve() {
             Some((_, guess_count)) => {
-                println!("{answer} in {guess_count}");
+                // println!("{answer} in {guess_count}");
                 score += guess_count;
-                count += 1;
             },
             _ => {
-                println!("{answer}: unsolved");
+                println!("{answer}: {:?}", guesser.guessed_words());
                 wrong += 1;
             },
         };
