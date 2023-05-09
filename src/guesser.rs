@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashSet};
 
 macro_rules! mask {
     (C) => {Correctness::Correct};
@@ -118,15 +118,21 @@ impl<'a> Guess<'a> {
 pub(crate) struct Guesser<'a> {
     answer: &'a str,
     dictionary: Cow<'a, Vec<&'a str>>,
+    exclusions: &'a HashSet<&'a str>,
     history: [Option<Guess<'a>>; 6],
     guesses: usize,
 }
 
 impl<'a> Guesser<'a> {
-    pub(crate) fn new(answer: &'a str, dictionary: &'a Vec<&'a str>) -> Self {
+    pub(crate) fn new(
+        answer: &'a str,
+        dictionary: &'a Vec<&'a str>,
+        exclusions: &'a HashSet<&'a str>,
+    ) -> Self {
         Self {
             answer,
             dictionary: Cow::Borrowed(dictionary),
+            exclusions,
             history: [None; 6],
             guesses: 0,
         }
@@ -152,12 +158,16 @@ impl<'a> Guesser<'a> {
                     self.dictionary = Cow::Owned(
                         self.dictionary
                             .iter()
-                            .filter(|word| guess.matches(word))
-                            .map(|word| *word)
+                            .filter_map(|word| {
+                                (guess.matches(word) && !self.exclusions.contains(word))
+                                    .then(|| *word)
+                            })
                             .collect(),
                     );
                 },
-                Cow::Owned(dict) => dict.retain(|word| guess.matches(word)),
+                Cow::Owned(dict) => {
+                    dict.retain(|word| guess.matches(word) && !self.exclusions.contains(word))
+                },
             };
 
             self.history[self.guesses - 1] = Some(guess);

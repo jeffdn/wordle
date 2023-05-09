@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 mod guesser;
 
 static ANSWERS: &str = include_str!("../answers.txt");
@@ -20,15 +22,17 @@ fn main() {
     let mut count = 0;
     let mut score = 0;
     let mut wrong = 0;
+    let mut exclusions: HashSet<&str> = HashSet::new();
 
     for answer in answers.iter() {
-        let mut guesser = crate::guesser::Guesser::new(answer, &dictionary);
-        count += 1;
+        let mut guesser = crate::guesser::Guesser::new(answer, &dictionary, &exclusions);
 
         match guesser.solve() {
             Some((_, guess_count)) => {
                 // println!("{answer} in {guess_count}");
+                count += 1;
                 score += guess_count;
+                exclusions.insert(answer);
             },
             _ => {
                 println!("{answer}: {:?}", guesser.guessed_words());
