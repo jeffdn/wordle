@@ -176,7 +176,10 @@ impl<'a> Guesser<'a> {
     }
 
     pub(crate) fn guessed_words(&self) -> Vec<&str> {
-        self.history.iter().map(|og| og.unwrap().word).collect()
+        self.history
+            .iter()
+            .filter_map(|og| og.map(|g| g.word))
+            .collect()
     }
 }
 
