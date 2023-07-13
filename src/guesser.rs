@@ -153,7 +153,7 @@ impl<'a> Guesser<'a> {
                             .iter()
                             .filter_map(|word| {
                                 (guess.matches(word) && !self.exclusions.contains(word))
-                                    .then(|| *word)
+                                    .then_some(*word)
                             })
                             .collect(),
                     );
